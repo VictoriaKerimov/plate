@@ -592,22 +592,40 @@ function shrink(file){
 }
 
 /* ---------- UMD dining hall menu (menu/<hall>.json, filled in by the Step 2 script) ---------- */
-const hallName = id => (HALLS.find(h => h.id === id) || {}).name || '';
-const asks = () => !!schoolOf(profile);
 async function loadMenu(hall){
-  if (hall in menus) return menus[hall];
-  menus[hall] = null;
-  try { const r = await fetch(`menu/${hall}.json`, { cache:'no-store' }); if (r.ok) menus[hall] = await r.json(); } catch {}
-  return menus[hall];
+  const c = menus[hall];
+  if (c && ((c.data && c.data.date === dayKey()) || Date.now() - c.t < 5 * 60000)) return c.data;
+  let data = null;
+  try { const r = await fetch(`menu/${hall}.json?t=${Date.now()}`, { cache:'no-store' }); if (r.ok) data = await r.json(); } catch {}
+  menus[hall] = { data, t: Date.now() };
+  return data;
 }
-async function menuContext(meal, hall){
-  if (!hall || hall === 'none' || meal === 'Snack') return '';
+async function menuItems(meal, hall){
   const m = await loadMenu(hall);
-  if (!m || m.date !== dayKey()) return '';
-  const items = m.meals && m.meals[meal];
-  if (!items || !items.length) return '';
-  return `\n\nToday's ${hallName(hall) || 'campus'} dining hall ${meal.toLowerCase()} menu (name|serving size|kcal|protein g|carbs g|fat g, all per that serving size). If something I ate matches an item, use these numbers scaled to my portion:\n` +
-    items.map(i => `${i.name}|${i.serving || '1 serving'}|${i.cal}|${i.p}|${i.c}|${i.f}`).join('\n');
+  if (!m || m.date !== dayKey()) return [];
+  const lists = meal === 'Snack' ? Object.values(m.meals || {}) : [(m.meals || {})[meal] || []];
+  const seen = new Set(), out = [];
+  lists.forEach(l => l.forEach(i => {
+    const k = i.name + '|' + i.serving;
+    if (seen.has(k) || /\bBAR\b/i.test(i.serving || '')) return;
+    seen.add(k); out.push(i);
+  }));
+  return out;
+}
+function menuContext(items, hall, meal){
+  if (!items.length) return '';
+  const label = meal === 'Snack' ? 'all-day' : meal.toLowerCase();
+  return `\n\nToday's ${hallName(hall) || 'campus'} dining hall ${label} menu, as id|name|serving size:\n` +
+    items.map((m, i) => `${i + 1}|${m.name}|${m.serving || '1 serving'}`).join('\n') +
+    `\n\nFor each food I ate (or each ingredient, if I built it from parts) that is on this menu, add "menu_id" (the id above) and "servings" (how many of that menu serving size I ate, e.g. 2 for two slices when the serving is 1 slice, or 2 for 8 oz when the serving is 4 oz) to that item or ingredient. The app fills in the nutrition from the menu, so its numbers don't matter. If it isn't on the menu, leave menu_id out and estimate as usual. Only match when it is clearly the same food.`;
+}
+function applyMenu(o, items){
+  const id = Math.round(num(o.menu_id)), m = id >= 1 ? items[id - 1] : null;
+  if (!m) return false;
+  const s = Math.min(20, num(o.servings) > 0 ? num(o.servings) : 1);
+  Object.assign(o, { name: m.name, qty: s, unit: 'serving', calories: m.cal * s, protein_g: m.p * s, carbs_g: m.c * s,
+    fat_g: m.f * s, fiber_g: m.fiber * s, sugar_g: m.sugar * s, sodium_mg: m.sodium * s, _menu: s });
+  return true;
 }
 
 /* ---------- Log food with AI ---------- */
@@ -623,20 +641,32 @@ $('#logBtn').onclick = async () => {
   if (!aiKey()){ setStatus('Add your API key in settings first.', true); return openSettings(); }
   const btn = $('#logBtn'); btn.disabled = true; setStatus('Analyzing…');
   try {
+    const atHall = !!hall && hall !== 'none';
+    const mi = atHall ? await menuItems(meal, hall) : [];
     const content = [];
     if (photo) content.push({ type:'image', source:{ type:'base64', media_type:'image/jpeg', data: photo.split(',')[1] } });
-    content.push({ type:'text', text: `Meal: ${meal}\nWhat I ate: ${text || '(see photo)'}${hall && hall !== 'none' ? `\nI ate at the ${hallName(hall)} dining hall at ${schoolName(hall)}.` : ''}${await menuContext(meal, hall)}` });
+    content.push({ type:'text', text: `Meal: ${meal}\nWhat I ate: ${text || '(see photo)'}${atHall ? `\nI ate at the ${hallName(hall)} dining hall at ${schoolName(hall)}.` : ''}${menuContext(mi, hall, meal)}` });
     const raw = await callAI(SYSTEM, content, 1000);
     const out = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1));
     const d = today(), t = Date.now();
-    (out.items || []).forEach((it, i) => d.entries.push({
-      id: t + i, meal, hall: hall || '', name: String(it.name || 'Food').slice(0, 80),
-      kcal: Math.round(num(it.calories)), p: num(it.protein_g), c: num(it.carbs_g), f: num(it.fat_g),
-      fiber: num(it.fiber_g), sugar: num(it.sugar_g), sodium: num(it.sodium_mg), health: Math.max(0, Math.min(100, Math.round(num(it.health)))), ...mapIng(it)
-    }));
+    let matched = 0;
+    (out.items || []).forEach((it, i) => {
+      const ings = Array.isArray(it.ingredients) ? it.ingredients : [];
+      ings.forEach(g => { if (applyMenu(g, mi)) matched++; });
+      const hit = ings.length < 2 && applyMenu(it, mi);
+      if (hit) matched++;
+      d.entries.push({
+        id: t + i, meal, hall: hall || '', name: String(it.name || 'Food').slice(0, 80),
+        kcal: Math.round(num(it.calories)), p: num(it.protein_g), c: num(it.carbs_g), f: num(it.fat_g),
+        fiber: num(it.fiber_g), sugar: num(it.sugar_g), sodium: num(it.sodium_mg), health: Math.max(0, Math.min(100, Math.round(num(it.health)))), ...mapIng(it),
+        ...(hit ? { portion: it._menu, simple: true } : {})
+      });
+    });
     const w = Math.round(num(out.water_oz)); if (w > 0){ d.water += w; d.adds.push(w); }
     if (!(out.items || []).length && w <= 0) return setStatus('I couldn’t find any food in that. Try describing it differently.', true);
-    saveDays(); $('#food').value = ''; resetWhere(); $('#clearPhoto').click(); setStatus('Logged.'); render();
+    saveDays(); $('#food').value = ''; resetWhere(); $('#clearPhoto').click();
+    setStatus(!atHall ? 'Logged.' : !mi.length ? 'Logged. No menu for today, so I estimated.' : matched ? `Logged. ${matched} matched to the menu.` : 'Logged. Nothing matched the menu, so I estimated.');
+    render();
   } catch (err) {
     setStatus(err instanceof SyntaxError ? 'Got a confusing reply. Try again.' : err.message, true);
   } finally { btn.disabled = false; }
