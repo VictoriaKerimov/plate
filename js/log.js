@@ -5,25 +5,27 @@ List each distinct food as its own item. health is a whole number from 1 to 100 
 
 function setStatus(t, err){ const s = $('#status'); s.textContent = t; s.className = err ? 'err' : ''; }
 
-/* Shows what the AI found; resolves true on Add, false on Cancel/Esc */
-function confirmLog(made, w){
+/* Shows what the AI found; resolves true on Add, false on Cancel/Esc.
+   tags = Map of entry id -> small source label ("On menu", "Not on menu, estimated", ...) */
+function confirmLog(made, w, tags = new Map()){
   return new Promise(res => {
     const dlg = $('#confirmDlg'), box = $('#confirmItems');
     const draw = () => {
-    box.innerHTML = '';
-    made.forEach(e => {
-      const row = document.createElement('div'); row.className = 'entry tap';
-      row.tabIndex = 0; row.setAttribute('role', 'button'); row.setAttribute('aria-label', 'Edit ' + e.name);
-      row.onclick = () => openEdit(e.id, e, draw);
-      row.onkeydown = ev => { if (ev.key === 'Enter') openEdit(e.id, e, draw); };
-      const info = document.createElement('div'), s = document.createElement('strong'), m = document.createElement('small');
-      s.textContent = e.name;
-      m.textContent = [amtText(e) || (e.ing && e.ing.length > 1 ? e.ing.length + ' ingredients' : ''), `P ${Math.round(e.p)}g · C ${Math.round(e.c)}g · F ${Math.round(e.f)}g`].filter(Boolean).join(' · ');
-      info.append(s, m);
-      const kc = document.createElement('span'); kc.className = 'kc'; kc.textContent = Math.round(e.kcal) + ' cal';
-      row.append(info, kc); box.append(row);
-    });
-    if (w > 0){ const p = document.createElement('p'); p.className = 'hint'; p.textContent = `Also adds ${w} oz of water.`; box.append(p); }
+      box.innerHTML = '';
+      made.forEach(e => {
+        const row = document.createElement('div'); row.className = 'entry tap';
+        row.tabIndex = 0; row.setAttribute('role', 'button'); row.setAttribute('aria-label', 'Edit ' + e.name);
+        row.onclick = () => openEdit(e.id, e, draw);
+        row.onkeydown = ev => { if (ev.key === 'Enter') openEdit(e.id, e, draw); };
+        const info = document.createElement('div'), s = document.createElement('strong'), m = document.createElement('small');
+        s.textContent = e.name;
+        m.textContent = [amtText(e) || (e.ing && e.ing.length > 1 ? e.ing.length + ' ingredients' : ''), `P ${Math.round(e.p)}g · C ${Math.round(e.c)}g · F ${Math.round(e.f)}g`].filter(Boolean).join(' · ');
+        info.append(s, m);
+        if (tags.has(e.id)){ const tg = document.createElement('small'); tg.textContent = tags.get(e.id); info.append(tg); }
+        const kc = document.createElement('span'); kc.className = 'kc'; kc.textContent = Math.round(e.kcal) + ' cal';
+        row.append(info, kc); box.append(row);
+      });
+      if (w > 0){ const p = document.createElement('p'); p.className = 'hint'; p.textContent = `Also adds ${w} oz of water.`; box.append(p); }
     };
     draw();
     let done = false;
@@ -41,6 +43,62 @@ function commitLog(made, w, msg){
   saveDays(); $('#food').value = ''; resetWhere(); $('#clearPhoto').click(); setStatus(msg); render();
 }
 
+/* ---------- Menu vs AI estimate ---------- */
+const CMP = { kcalAbs: 75, kcalPct: .25, macAbs: 8, macPct: .35 };  // how far apart counts as "considerable"
+const MAC = [['p', 'Protein'], ['c', 'Carbs'], ['f', 'Fat']];
+const differs = (a, b, abs, pct) => { const d = Math.abs(a - b); return d >= abs && d >= pct * Math.max(a, b); };
+const sumLine = e => `${Math.round(e.kcal)} cal · P ${Math.round(e.p)}g · C ${Math.round(e.c)}g · F ${Math.round(e.f)}g`;
+function compareEntries(menu, ai){
+  if (!(ai.kcal > 0)) return null;
+  if (differs(menu.kcal, ai.kcal, CMP.kcalAbs, CMP.kcalPct)) return { kind: 'cal' };
+  const macros = MAC.filter(([k]) => differs(menu[k], ai[k], CMP.macAbs, CMP.macPct)).map(([k]) => k);
+  return macros.length ? { kind: 'mac', macros } : null;
+}
+function seg(name, a, b, col){
+  const w = document.createElement('div'); w.className = 'seg' + (col ? ' col' : '');
+  [['menu', a], ['ai', b]].forEach(([v, text], i) => {
+    const l = document.createElement('label'), r = document.createElement('input'), s = document.createElement('span');
+    r.type = 'radio'; r.name = name; r.value = v; r.checked = i === 0; s.textContent = text; l.append(r, s); w.append(l);
+  });
+  return w;
+}
+/* Asks which version to log; edits `made` in place. Resolves false on Cancel/Esc. */
+function resolveDiffs(made, diffs){
+  return new Promise(res => {
+    const dlg = $('#cmpDlg'), box = $('#cmpItems'); box.innerHTML = '';
+    const val = n => (dlg.querySelector(`input[name="${n}"]:checked`) || {}).value;
+    diffs.forEach((d, n) => {
+      const sec = document.createElement('div'); sec.className = 'field cmp';
+      const h = document.createElement('strong'); h.textContent = d.menu.name;
+      const p = document.createElement('p'); p.className = 'hint'; sec.append(h, p);
+      if (d.kind === 'cal'){
+        p.textContent = 'Calories are far apart, so the whole food switches.';
+        sec.append(seg(`cmp${n}`, `Menu: ${sumLine(d.menu)}`, `AI: ${sumLine(d.ai)}`, true));
+      } else {
+        p.textContent = 'Calories are close, but these macros differ. Pick one for each.';
+        d.macros.forEach(k => {
+          const lb = document.createElement('p'); lb.className = 'hint'; lb.textContent = MAC.find(m => m[0] === k)[1];
+          sec.append(lb, seg(`cmp${n}${k}`, `Menu ${Math.round(d.menu[k])}g`, `AI ${Math.round(d.ai[k])}g`));
+        });
+      }
+      box.append(sec);
+    });
+    let done = false;
+    const fin = ok => {
+      if (done) return; done = true;
+      if (ok) diffs.forEach((d, n) => {
+        if (d.kind === 'cal'){ if (val(`cmp${n}`) === 'ai') made[d.idx] = d.ai; }
+        else d.macros.forEach(k => { if (val(`cmp${n}${k}`) === 'ai') made[d.idx][k] = d.ai[k]; });
+      });
+      if (dlg.open) dlg.close(); res(ok);
+    };
+    $('#cmpYes').onclick = () => fin(true);
+    $('#cmpNo').onclick = () => fin(false);
+    dlg.oncancel = () => fin(false);
+    dlg.showModal();
+  });
+}
+
 $('#logBtn').onclick = async () => {
   const text = $('#food').value.trim(), meal = $('#meal').value, hall = asks() ? $('#where').value : '';
   if (!text && !photo) return setStatus('Describe what you ate or add a photo.', true);
@@ -56,26 +114,52 @@ $('#logBtn').onclick = async () => {
     const out = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1));
     const t = Date.now();
     let matched = 0;
+    const diffs = [], menuIds = new Set();
     const made = (out.items || []).map((it, i) => {
+      const orig = JSON.parse(JSON.stringify(it));   // the AI's own numbers, before the menu overwrites them
       const ings = Array.isArray(it.ingredients) ? it.ingredients : [];
-      ings.forEach(g => { if (applyMenu(g, mi)) matched++; });
+      let ingHit = false;
+      ings.forEach(g => { if (applyMenu(g, mi)){ matched++; ingHit = true; } });
       const hit = ings.length < 2 && applyMenu(it, mi);
       if (hit) matched++;
-      const mg = mapIng(it), base = hit ? it._base : (mg.ing ? null : parseServing(it.amount));
-      return {
-        id: t + i, meal, hall: hall || '', name: String(it.name || 'Food').slice(0, 80),
-        kcal: Math.round(num(it.calories)), p: num(it.protein_g), c: num(it.carbs_g), f: num(it.fat_g),
-        fiber: num(it.fiber_g), sugar: num(it.sugar_g), sodium: num(it.sodium_mg), health: Math.max(0, Math.min(100, Math.round(num(it.health)))), ...mg,
-        ...(hit ? { portion: it._menu, simple: true } : {}),
-        ...(base ? { base, ...(hit ? {} : { portion: 1, simple: true }) } : {})
+      const build = (src, h) => {
+        const mg = mapIng(src), base = h ? src._base : (mg.ing ? null : parseServing(src.amount));
+        return {
+          id: t + i, meal, hall: hall || '', name: String(src.name || 'Food').slice(0, 80),
+          kcal: Math.round(num(src.calories)), p: num(src.protein_g), c: num(src.carbs_g), f: num(src.fat_g),
+          fiber: num(src.fiber_g), sugar: num(src.sugar_g), sodium: num(src.sodium_mg), health: Math.max(0, Math.min(100, Math.round(num(src.health)))), ...mg,
+          ...(h ? { portion: src._menu, simple: true } : {}),
+          ...(base ? { base, ...(h ? {} : { portion: 1, simple: true }) } : {})
+        };
       };
+      const e = build(it, hit);
+      if (hit || ingHit){
+        menuIds.add(e.id);
+        const ai = build(orig, false), c = compareEntries(e, ai);
+        if (c) diffs.push({ ...c, idx: i, menu: e, ai });
+      }
+      return e;
     });
     const w = Math.round(num(out.water_oz));
     if (!made.length && w <= 0) return setStatus('I couldn’t find any food in that. Try describing it differently.', true);
     const msg = !atHall ? 'Logged.' : !mi.length ? 'Logged. No menu for today, so I estimated.' : matched ? `Logged. ${matched} matched to the menu.` : 'Logged. Nothing matched the menu, so I estimated.';
+    if (diffs.length){
+      setStatus('');
+      if (!(await resolveDiffs(made, diffs))){ setStatus('Not added. Your text is still there if you want to change it.'); return; }
+    }
+    const tags = new Map();
+    if (atHall) made.forEach((e, i) => {
+      const d = diffs.find(x => x.idx === i);
+      tags.set(e.id,
+        !mi.length ? 'No menu today, estimated'
+        : !menuIds.has(e.id) ? 'Not on menu, estimated'
+        : d && d.kind === 'cal' && e === d.ai ? 'AI estimate (menu differed)'
+        : d && d.kind === 'mac' && d.macros.some(k => e[k] === d.ai[k]) ? 'On menu, some macros from AI'
+        : 'On menu');
+    });
     if (profile.confirmLog !== false && made.length){
       setStatus('');
-      if (!(await confirmLog(made, w))){ setStatus('Not added. Your text is still there if you want to change it.'); return; }
+      if (!(await confirmLog(made, w, tags))){ setStatus('Not added. Your text is still there if you want to change it.'); return; }
     }
     commitLog(made, w, msg);
   } catch (err) {
