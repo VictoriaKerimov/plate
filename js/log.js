@@ -60,7 +60,7 @@ $('#logBtn').onclick = async () => {
         kcal: Math.round(num(it.calories)), p: num(it.protein_g), c: num(it.carbs_g), f: num(it.fat_g),
         fiber: num(it.fiber_g), sugar: num(it.sugar_g), sodium: num(it.sodium_mg), health: Math.max(0, Math.min(100, Math.round(num(it.health)))), ...mg,
         ...(hit ? { portion: it._menu, simple: true } : {}),
-        ...(base ? { base } : {})
+        ...(base ? { base, ...(hit ? {} : { portion: 1, simple: true }) } : {})
       };
     });
     const w = Math.round(num(out.water_oz));

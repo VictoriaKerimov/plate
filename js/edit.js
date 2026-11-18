@@ -20,7 +20,7 @@ function mapIng(it){
 /* favorites */
 function favFrom(e){
   const f = { id: 'f' + Date.now(), name: e.name }; KEYS.forEach(k => { f[k] = num(e[k]); });
-  f.health = num(e.health); f.hall = e.hall || ''; if (e.portion) f.portion = e.portion; if (e.base) f.base = e.base; if (e.ing) f.ing = e.ing.map(i => ({ ...i })); return f;
+  f.health = num(e.health); f.hall = e.hall || ''; if (e.portion) f.portion = e.portion; if (e.base) f.base = e.base; if (e.simple) f.simple = true; if (e.ing) f.ing = e.ing.map(i => ({ ...i })); return f;
 }
 const locText = h => h === 'none' ? 'Not at a dining hall' : (h ? hallName(h) : '(no data)');
 function renderFavs(){
@@ -67,7 +67,7 @@ function openEdit(id){
   const isFav = !!(e.favId && favs.some(f => f.id === e.favId));
   const portion = e.portion > 0 ? e.portion : 1, base = e.base || null;
   const one = () => ({ name: e.name, qty: base ? +(portion * base.qty).toFixed(2) : portion, unit: base ? base.unit : 'serving', ...Object.fromEntries(KEYS.map(k => [k, num(e[k])])) });
-  ed = { id, base, ing: e.simple ? null : (e.ing && e.ing.length ? e.ing.map(i => ({ ...i })) : [one()]), portion, fav: isFav, wasFav: isFav };
+  ed = { id, base, mode: base ? base.unit : 'portion', ing: e.simple ? null : (e.ing && e.ing.length ? e.ing.map(i => ({ ...i })) : [one()]), portion, fav: isFav, wasFav: isFav };
   $('#edName').value = e.name; whereOpts($('#edWhere'), '(no data)', schoolOf(profile)); if (e.hall && e.hall !== 'none' && ![...$('#edWhere').options].some(o => o.value === e.hall)) $('#edWhere').add(new Option(hallName(e.hall), e.hall)); $('#edWhere').value = e.hall || ''; $('#edWhereField').hidden = !(asks() || e.hall); fillSimple(e); portionUI(); setUnit(e, ed.portion);
   $('#edStatus').textContent = ''; setStar(); drawEdit(); $('#edit').showModal();
 }
@@ -119,17 +119,46 @@ function drawIng(){
   updTotals();
 }
 
-/* Portion box shows the real amount (oz / cups / pieces) when the food has a base serving, otherwise a × multiplier */
+/* Portion box + unit picker. ed.portion is always "how many menu servings"; the picker only changes how it's shown.
+   Picker order: "portion" first, then the unit the nutrition data uses, then other units that make sense for that food. */
+const UNITS = { g: { f: 'w', k: 1 }, oz: { f: 'w', k: 28.3495 }, lb: { f: 'w', k: 453.592 }, kg: { f: 'w', k: 1000 },
+  ml: { f: 'v', k: 1 }, tsp: { f: 'v', k: 4.92892 }, tbsp: { f: 'v', k: 14.7868 }, 'fl oz': { f: 'v', k: 29.5735 }, cup: { f: 'v', k: 236.588 }, l: { f: 'v', k: 1000 } };
+const UNIT_MORE = { w: ['oz', 'g'], v: ['cup', 'tbsp', 'tsp', 'ml'] };
+const unitKey = u => { u = String(u || '').toLowerCase(); return u === 'cups' ? 'cup' : u; };
+function unitChoices(base){
+  const k = unitKey(base.unit), d = UNITS[k], out = ['portion', base.unit];
+  if (d) UNIT_MORE[d.f].forEach(u => { if (u !== k) out.push(u); });
+  return out;
+}
+/* amount in unit u for a given portion (in servings), and back */
+function amtIn(u, p){
+  if (u === 'portion' || !ed.base) return p;
+  const amt = p * ed.base.qty; if (u === ed.base.unit) return amt;
+  return amt * UNITS[unitKey(ed.base.unit)].k / UNITS[unitKey(u)].k;
+}
+function portionFrom(u, v){
+  if (u === 'portion' || !ed.base) return v;
+  if (u === ed.base.unit) return v / ed.base.qty;
+  return v * UNITS[unitKey(u)].k / UNITS[unitKey(ed.base.unit)].k / ed.base.qty;
+}
 function portionUI(){
-  $('#edPortionLbl').textContent = ed.base ? `Portion (${ed.base.unit})` : 'Portion (×)';
-  $('#edPortion').value = ed.base ? +(ed.portion * ed.base.qty).toFixed(2) : ed.portion;
+  const sel = $('#edUnit'), ch = ed.base ? unitChoices(ed.base) : ['portion'];
+  if (!ch.includes(ed.mode)) ed.mode = ed.base ? ed.base.unit : 'portion';
+  sel.innerHTML = ''; ch.forEach(u => sel.add(new Option(u, u))); sel.value = ed.mode; sel.disabled = ch.length < 2;
+  $('#edPortion').value = +amtIn(ed.mode, ed.portion).toFixed(2);
+}
+function applyPortion(np){
+  ed.portion = np; EF.forEach(([k, sel]) => { $(sel).value = shown(k, ed.unit[k] * np); }); updTotals();
 }
 $('#edPortion').addEventListener('input', () => {
   const raw = num($('#edPortion').value); if (!ed || ed.ing || !(raw > 0)) return;
-  const np = ed.base ? raw / ed.base.qty : raw;
-  ed.portion = np; EF.forEach(([k, sel]) => { $(sel).value = shown(k, ed.unit[k] * np); }); updTotals();
+  applyPortion(portionFrom(ed.mode, raw));
 });
-document.querySelectorAll('#edit [data-p]').forEach(b => b.onclick = () => { $('#edPortion').value = ed && ed.base ? +(b.dataset.p * ed.base.qty).toFixed(2) : b.dataset.p; $('#edPortion').dispatchEvent(new Event('input')); });
+$('#edUnit').addEventListener('change', () => { if (!ed) return; ed.mode = $('#edUnit').value; $('#edPortion').value = +amtIn(ed.mode, ed.portion).toFixed(2); });
+document.querySelectorAll('#edit [data-p]').forEach(b => b.onclick = () => {
+  if (!ed || ed.ing) return;
+  const p = +b.dataset.p; $('#edPortion').value = +amtIn(ed.mode, p).toFixed(2); applyPortion(p);
+});
 EF.forEach(([k, sel]) => $(sel).addEventListener('input', () => { if (ed && !ed.ing){ ed.unit[k] = num($(sel).value) / (ed.portion || 1); updTotals(); } }));
 $('#edFav').onclick = () => { if (ed){ ed.fav = !ed.fav; setStar(); } };
 
