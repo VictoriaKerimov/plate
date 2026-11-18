@@ -62,12 +62,13 @@ function setStar(){
   const b = $('#edFav'); b.textContent = ed.fav ? '★' : '☆'; b.setAttribute('aria-pressed', String(ed.fav));
   b.setAttribute('aria-label', ed.fav ? 'Remove from favorites' : 'Add to favorites');
 }
-function openEdit(id){
-  const e = today().entries.find(x => x.id === id); if (!e) return;
+/* pending = a not-yet-logged entry (from the confirm popup); after() runs when its edit is saved */
+function openEdit(id, pending, after){
+  const e = pending || today().entries.find(x => x.id === id); if (!e) return;
   const isFav = !!(e.favId && favs.some(f => f.id === e.favId));
   const portion = e.portion > 0 ? e.portion : 1, base = e.base || null;
   const one = () => ({ name: e.name, qty: base ? +(portion * base.qty).toFixed(2) : portion, unit: base ? base.unit : 'serving', ...Object.fromEntries(KEYS.map(k => [k, num(e[k])])) });
-  ed = { id, base, mode: base ? base.unit : 'portion', ing: e.simple ? null : (e.ing && e.ing.length ? e.ing.map(i => ({ ...i })) : [one()]), portion, fav: isFav, wasFav: isFav };
+  ed = { id, pending: pending || null, after: after || null, base, mode: base ? base.unit : 'portion', ing: e.simple ? null : (e.ing && e.ing.length ? e.ing.map(i => ({ ...i })) : [one()]), portion, fav: isFav, wasFav: isFav };
   $('#edName').value = e.name; whereOpts($('#edWhere'), '(no data)', schoolOf(profile)); if (e.hall && e.hall !== 'none' && ![...$('#edWhere').options].some(o => o.value === e.hall)) $('#edWhere').add(new Option(hallName(e.hall), e.hall)); $('#edWhere').value = e.hall || ''; $('#edWhereField').hidden = !(asks() || e.hall); fillSimple(e); portionUI(); setUnit(e, ed.portion);
   $('#edStatus').textContent = ''; setStar(); drawEdit(); $('#edit').showModal();
 }
@@ -190,7 +191,7 @@ $('#edAdd').onclick = async () => {
 };
 $('#edCancel').onclick = () => $('#edit').close();
 $('#edSave').onclick = () => {
-  const e = today().entries.find(x => x.id === ed.id); if (!e) return $('#edit').close();
+  const e = ed.pending || today().entries.find(x => x.id === ed.id); if (!e) return $('#edit').close();
   if (ed.ing && !ed.ing.length){ $('#edStatus').textContent = 'Keep at least one ingredient, or choose “Use one total instead”.'; return; }
   e.name = $('#edName').value.trim().slice(0, 80) || e.name; e.hall = $('#edWhere').value;
   if (ed.ing && ed.ing.length > 1){
@@ -207,5 +208,6 @@ $('#edSave').onclick = () => {
   }
   if (ed.fav && !ed.wasFav){ const f = favFrom(e); e.favId = f.id; favs.push(f); saveFavs(); }
   else if (!ed.fav && ed.wasFav){ favs = favs.filter(x => x.id !== e.favId); delete e.favId; saveFavs(); }
+  if (ed.pending){ $('#edit').close(); if (ed.after) ed.after(); return; }
   saveDays(); $('#edit').close(); render();
 };
