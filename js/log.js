@@ -8,9 +8,14 @@ function setStatus(t, err){ const s = $('#status'); s.textContent = t; s.classNa
 /* Shows what the AI found; resolves true on Add, false on Cancel/Esc */
 function confirmLog(made, w){
   return new Promise(res => {
-    const dlg = $('#confirmDlg'), box = $('#confirmItems'); box.innerHTML = '';
+    const dlg = $('#confirmDlg'), box = $('#confirmItems');
+    const draw = () => {
+    box.innerHTML = '';
     made.forEach(e => {
-      const row = document.createElement('div'); row.className = 'entry';
+      const row = document.createElement('div'); row.className = 'entry tap';
+      row.tabIndex = 0; row.setAttribute('role', 'button'); row.setAttribute('aria-label', 'Edit ' + e.name);
+      row.onclick = () => openEdit(e.id, e, draw);
+      row.onkeydown = ev => { if (ev.key === 'Enter') openEdit(e.id, e, draw); };
       const info = document.createElement('div'), s = document.createElement('strong'), m = document.createElement('small');
       s.textContent = e.name;
       m.textContent = [amtText(e) || (e.ing && e.ing.length > 1 ? e.ing.length + ' ingredients' : ''), `P ${Math.round(e.p)}g · C ${Math.round(e.c)}g · F ${Math.round(e.f)}g`].filter(Boolean).join(' · ');
@@ -19,6 +24,8 @@ function confirmLog(made, w){
       row.append(info, kc); box.append(row);
     });
     if (w > 0){ const p = document.createElement('p'); p.className = 'hint'; p.textContent = `Also adds ${w} oz of water.`; box.append(p); }
+    };
+    draw();
     let done = false;
     const fin = v => { if (done) return; done = true; if (dlg.open) dlg.close(); res(v); };
     $('#confirmYes').onclick = () => fin(true);
