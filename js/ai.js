@@ -26,7 +26,7 @@ function menuContext(items, hall, meal){
   const label = meal === 'Snack' ? 'all-day' : meal.toLowerCase();
   return `\n\nToday's ${hallName(hall) || 'campus'} dining hall ${label} menu, as id|name|serving size:\n` +
     items.map((m, i) => `${i + 1}|${m.name}|${m.serving || '1 serving'}`).join('\n') +
-    `\n\nFor each food I ate (or each ingredient, if I built it from parts) that is on this menu, add "menu_id" (the id above) and "servings" (how many of that menu serving size I ate, use a fraction when I ate less than one serving: e.g. 2 for two slices when the serving is 1 slice, 2 for 8 oz when the serving is 4 oz, and 0.5 for 2 oz when the serving is 4 oz) to that item or ingredient. The app fills in the nutrition from the menu, so its numbers don't matter. If it isn't on the menu, leave menu_id out and estimate as usual. Only match when it is clearly the same food.`;
+    `\n\nFor each food I ate (or each ingredient, if I built it from parts) that is on this menu, add "menu_id" (the id above) and "servings" (how many of that menu serving size I ate, use a fraction when I ate less than one serving: e.g. 2 for two slices when the serving is 1 slice, 2 for 8 oz when the serving is 4 oz, and 0.5 for 2 oz when the serving is 4 oz) to that item or ingredient. The app fills in the nutrition from the menu, so its numbers don't matter. Still give your own honest estimate of calories and macros for what I ate, as if you hadn't seen the menu, because the app compares the two. If it isn't on the menu, leave menu_id out and estimate as usual. Only match when it is clearly the same food.`;
 }
 const MEASURE = /^(oz|cups?|tbsp|tsp|g|kg|ml|l|lb|lbs)$/;
 const UNIT_ALIAS = { ozl: 'oz', ounce: 'oz', ounces: 'oz', tbl: 'tbsp', tb: 'tbsp', ea: 'each' };
