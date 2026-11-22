@@ -1,7 +1,7 @@
 /* ---------- UMD dining hall menu (menu/<hall>.json, filled in by the Step 2 script) ---------- */
 const hallName = id => (HALLS.find(h => h.id === id) || {}).name || '';
 const asks = () => !!schoolOf(profile);
-  async function loadMenu(hall){
+async function loadMenu(hall){
   const c = menus[hall];
   if (c && ((c.data && c.data.date === dayKey()) || Date.now() - c.t < 5 * 60000)) return c.data;
   let data = null;
