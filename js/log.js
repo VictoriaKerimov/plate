@@ -44,7 +44,7 @@ function commitLog(made, w, msg){
 }
 
 /* ---------- Menu vs AI estimate ---------- */
-const CMP = { kcalAbs: 75, kcalPct: .25, macAbs: 8, macPct: .35 };  // how far apart counts as "considerable"
+const CMP = { kcalAbs: 150, kcalPct: .4, macAbs: 15, macPct: .5 };  // how far apart counts as "considerable"
 const MAC = [['p', 'Protein'], ['c', 'Carbs'], ['f', 'Fat']];
 const differs = (a, b, abs, pct) => { const d = Math.abs(a - b); return d >= abs && d >= pct * Math.max(a, b); };
 const sumLine = e => `${Math.round(e.kcal)} cal · P ${Math.round(e.p)}g · C ${Math.round(e.c)}g · F ${Math.round(e.f)}g`;
