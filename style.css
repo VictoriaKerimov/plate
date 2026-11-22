@@ -163,7 +163,7 @@ label.sw{display:block;position:relative;flex:0 0 auto;width:50px;height:30px;ma
 .ing-nm{display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ing-sum{display:block;color:var(--muted);font-size:12px;margin-top:2px}
 .ing-u{color:var(--muted);font-size:14px;min-width:30px}
-.ing input{padding:8px 9px;font-size:15px;background:var(--s1);min-width:0}
+.ing input{padding:8px 9px;font-size:16px;background:var(--s1);min-width:0}
 .ing input.ing-qty{width:64px;flex:0 0 auto}
 .ing-x{background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;padding:2px 6px}
 .ing-panel{margin-top:10px;padding-top:10px;border-top:1px solid var(--line);display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -205,3 +205,7 @@ label.sw{display:block;position:relative;flex:0 0 auto;width:50px;height:30px;ma
 .seg.col{flex-direction:column}
 .cmp .hint{margin:4px 0}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+/* iOS Safari zooms the page when a focused field is under 16px.
+   Keep this LAST so any new field defaults to 16px. */
+input,select,textarea{font-size:16px}
